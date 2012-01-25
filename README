@@ -1,0 +1,6 @@
+This script needs to run at a lower sequence number than the
+vyatta-router init.d script. 
+
+It can generate a simple intefaces file and then download or obtain a config
+from a remote location. If its restarted then it runs and
+restarts the vyatta-router init.d script that reloads everything.
