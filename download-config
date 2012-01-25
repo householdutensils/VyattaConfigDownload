@@ -1,0 +1,192 @@
+#!/bin/sh
+### BEING INIT INFO
+#Provides: download-config
+#Default_Sequence: 50
+#Default-Start: 2 3 4 5
+#Description: Download remote config.boot or copy parent remotely or default locally if none exists
+#Version: 0.0.3
+### END INIT INFO
+
+
+
+
+#variables
+#Variables for downloading and/or copying the config file
+conf_dir=/opt/vyatta/etc/config/
+conf_name=config.boot
+remote_conf_location=192.168.0.201
+vyatta_etc=/opt/vyatta/etc/
+default_conf_name=config.boot.default
+#Variables for auto generating interfaces file
+generate_interface_flag=0
+dhcp_flag=0
+interfaces_file_location=/etc/network/interfaces
+address=0
+netmask=0
+gateway=0
+backtag=backup
+
+
+
+
+#--------------------------------------------------------------------------------------------------------------#
+# Fuction: download-config () #
+# Removes old config (If it exists) and attempts to download is remote config. #
+# If this fails, it downloads a parent config, and if this fails it copies a local default config #
+#Params: $conf_dir, $conf_name, $remote_conf_location, $vyatta_etc, $default_conf_name #
+#--------------------------------------------------------------------------------------------------------------#
+download_config ()
+{
+
+#remove old config if it exists
+if [ -e "${1}${2}" ]
+then
+rm ${1}${2}
+fi
+
+#try to download new config
+echo "Attempting to download remote config"
+if wget -q -P $1 ${3}/${HOSTNAME}/${2}
+then
+#echo a yay message if it works
+echo "remote config successfully downloaded"
+return 0
+else
+#echo a aww message if it doesn't
+echo "remote config not found, attempting to download remote parent config"
+if wget -q -P $1 ${3}/${2}
+then
+#echo an awww okay message
+echo "remote parent config successfully downloaded"
+return 0
+else
+#echo an awww mannnnnn message
+echo "remote parent config not found, copying default"
+#and copy the default config
+cp ${4}${5} ${1}${2}
+return 0
+fi
+fi
+
+}
+
+
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+# CAUTION: This is a test function, repracussions of restarting the init.d script without a full boot (And running the other vyatta startup scripts) are unknowen. #
+# Function: restart_vyatta_router () #
+# Runs the vyatta-router init.d script which should re-load config from the config directory #
+# Params: N/A #
+# Returns: 0 if successful, other if not #
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+restart_vyatta_router ()
+{
+
+/etc/init.d/vyatta-router restart
+
+return 0;
+
+}
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------#
+# Function: generate_interfaces_file () #
+# Generates a basic interfaces file in /etc/network to allow the router to download the parent config from a remote host #
+# Params: dhcp, ip_address, netmask, default_gateway #
+# Returns: 0 if successful #
+#----------------------------------------------------------------------------------------------------------------------------------------------#
+generate_interfaces_file ()
+{
+#If the interfaces file exists, delete it
+if [ -e "$2" ]
+then
+mv $2 ${2}.$6
+fi
+
+#Write loopback interface (This was in the default so I figured I should include it lol)
+echo "auto lo" >> $2
+echo "iface lo inet loopback" >> $2
+
+#If the DHCP flag is not set
+if [ ! $1 ]
+then
+#Write static details to interfaces file
+echo "auto eth0" >> $2
+echo "iface eth0 inet static" >> $2
+echo "address $3" >> $2
+echo "netmask $4" >> $2
+echo "gateway $5" >> $2
+else
+#Write basic DHCP settings into interfaces file
+echo "auto eth0" >> $2
+echo "iface eth0 inet dhcp" >> $2
+fi
+
+#re-run networking script
+/etc/init.d/networking restart
+#return
+return 0
+}
+
+
+#------------------------------------------------------------------------------------------------------------------------------#
+# Function: default_interfaces_file () #
+# Generates a default interfaces file in /etc/network to ensure it doesn't conflict with the vyatta config #
+# Params: N/A #
+# Returns: 0 if successful #
+#------------------------------------------------------------------------------------------------------------------------------#
+default_interfaces_file ()
+{
+#If the interfaces file exists, delete it
+if [ -e "$1" ]
+then
+rm $1
+mv ${1}.${2} $1
+fi
+
+#re-run networking script
+/etc/init.d/networking restart
+#return
+return 0
+
+}
+
+
+#***********************************************************#
+# SCRIPT STARTS HERE #
+#**********************************************************#
+
+
+#If the generate interface flag is set
+if [ $generate_interface_flag ]
+then
+#Call function to generate a basic interfaces file
+generate_interfaces_file $dhcp_flag $interfaces_file_location $address $netmask $gateway $backtag
+fi
+
+#Download or otherwise obtain a config
+download_config $conf_dir $conf_name $remote_conf_location $vyatta_etc $default_conf_name
+
+
+#If the generate interface flag is set
+if [ $generate_interface_flag ]
+then
+#Call function to generate a basic interfaces file
+default_interfaces_file $interfaces_file_location $backtag
+fi
+
+
+
+#If script is called with restart arg, then re-run the vyatta-router init.d script to make config changes live
+case "$1" in
+restart)
+echo "WARNING: the restart functionality of this script is untested, it directly restarts other init.d scripts that may not function properlly without other init.d scripts"
+restart_vyatta_router
+;;
+esac
+
+
+
+#bye bye
+echo "bye bye!"
+exit 0
