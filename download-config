@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 ### BEING INIT INFO
 #Provides: download-config
 #Default_Sequence: 50
